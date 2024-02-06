@@ -40,6 +40,9 @@ app.post('/api/verify-recaptcha', async (req, res) => {
                             github: "https://github.com/ryanlacey20",
                         },
                     });
+                } else if (recaptchaResponse == "test") {
+                    // Verification has failed
+                    res.json({ success: "test" });
                 } else {
                     // Verification has failed
                     res.json({ success: false });
