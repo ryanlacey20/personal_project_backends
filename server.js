@@ -45,12 +45,12 @@ app.post('/api/verify-recaptcha', async (req, res) => {
                     res.json({ success: "test" });
                 } else {
                     // Verification has failed
-                    res.json({ success: false });
+                    res.json({ success: false, print: recaptchaResponse });
                 }
             });
     } catch (error) {
         console.error('Error verifying reCAPTCHA:', error);
-        res.status(500).json({ success: false });
+        res.status(500).json({ errorstat: true, errormsg: error, success: false });
     }
 });
 
