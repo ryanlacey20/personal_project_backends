@@ -1,9 +1,22 @@
+const { initializeApp, applicationDefault, cert } = require('firebase-admin/app');
+
+const { getFirestore, Timestamp, FieldValue, Filter, doc } = require('firebase-admin/firestore');
+
+var admin = require("firebase-admin");
+
+var serviceAccount = require("./serviceAccountKey.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+const db = getFirestore();
+
 const express = require('express');
 const bodyParser = require('body-parser');
 
 const app = express();
 app.use(bodyParser.json());
-
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3001');
@@ -15,55 +28,52 @@ app.use((req, res, next) => {
 
 function generateGrid(words) {
     const gridSize = 15;
-    const grid = initializeGrid(gridSize); // Initialize an empty grid
+    const grid = initializeGrid(gridSize);
     const directions = ['horizontal', 'vertical', 'diagonal'];
 
-    const wordPositions = []; // Array to store word positions
+    const wordPositions = {};
 
     for (let key in words) {
         let word = words[key];
-        let direction = directions[Math.floor(Math.random() * directions.length)]; // Randomly select a direction
 
-        // Try to place the word in the grid until a valid position is found
+        let direction = directions[Math.floor(Math.random() * directions.length)];
+
         let placed = false;
         while (!placed) {
-            // Randomly select a starting position for the word
             let startX = Math.floor(Math.random() * gridSize);
             let startY = Math.floor(Math.random() * gridSize);
 
-            // Check if the word fits in the selected direction without overlapping
+
             if (checkFit(grid, word, startX, startY, direction)) {
-                // Place the word in the grid
                 placeWord(grid, word, startX, startY, direction);
                 placed = true;
 
-                // Store word position
+
                 const endX = startX + (direction === 'horizontal' ? word.length - 1 : 0);
                 const endY = startY + (direction === 'vertical' ? word.length - 1 : 0);
-                wordPositions.push({
+                wordPositions[word] = {
                     word: word,
                     direction: direction,
                     startX: startX,
                     startY: startY,
                     endX: endX,
                     endY: endY
-                });
+                };
             }
         }
     }
 
-    // Fill in the blank spaces with random letters and add x, y positions
     for (let i = 0; i < gridSize; i++) {
         for (let j = 0; j < gridSize; j++) {
-            if (grid[i][j] === '') {
+            if (isEmptyObject(grid[i][j])) {
+
                 grid[i][j] = getRandomLetter();
             }
             grid[i][j] = { letter: grid[i][j], x: i, y: j, belongsTo: null };
         }
     }
 
-    // Update the "belongsTo" property for each letter to indicate the word it belongs to
-    wordPositions.forEach(wordPos => {
+    Object.values(wordPositions).forEach(wordPos => {
         const { word, startX, startY, endX, endY } = wordPos;
         let currX = startX;
         let currY = startY;
@@ -77,44 +87,51 @@ function generateGrid(words) {
     return { grid: grid, wordPositions: wordPositions };
 }
 
-
-
-
 function getRandomLetter() {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const randomIndex = Math.floor(Math.random() * alphabet.length);
     return alphabet[randomIndex];
+
 }
+
+function isEmptyObject(obj) {
+    for (let key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 
 function checkFit(grid, word, startX, startY, direction) {
     const wordLength = word.length;
-    const gridSize = grid.length;
+    gridSize = Object.keys(grid).length
 
-    // Check if the word fits horizontally
+
     if (direction === 'horizontal' && startX + wordLength <= gridSize) {
         for (let i = 0; i < wordLength; i++) {
-            if (grid[startX + i][startY] !== '' && grid[startX + i][startY] !== word[i]) {
-                return false; // Overlapping with existing word
+
+            if (!isEmptyObject(grid[startX + i][startY]) && grid[startX + i][startY] !== word[i]) {
+                return false;
             }
         }
         return true;
     }
 
-    // Check if the word fits vertically
     if (direction === 'vertical' && startY + wordLength <= gridSize) {
         for (let i = 0; i < wordLength; i++) {
-            if (grid[startX][startY + i] !== '' && grid[startX][startY + i] !== word[i]) {
-                return false; // Overlapping with existing word
+            if (!isEmptyObject(grid[startX][startY + i]) && grid[startX][startY + i] !== word[i]) {
+                return false;
             }
         }
         return true;
     }
 
-    // Check if the word fits diagonally (down)
     if (direction === 'diagonal' && startX + wordLength <= gridSize && startY + wordLength <= gridSize) {
         for (let i = 0; i < wordLength; i++) {
-            if (grid[startX + i][startY + i] !== '' && grid[startX + i][startY + i] !== word[i]) {
-                return false; // Overlapping with existing word
+            if (!isEmptyObject(grid[startX + i][startY + i]) && grid[startX + i][startY + i] !== word[i]) {
+                return false;
             }
         }
         return true;
@@ -126,21 +143,18 @@ function checkFit(grid, word, startX, startY, direction) {
 function placeWord(grid, word, startX, startY, direction) {
     const wordLength = word.length;
 
-    // Place the word in the grid based on the selected direction
     if (direction === 'horizontal') {
         for (let i = 0; i < wordLength; i++) {
             grid[startX + i][startY] = word[i];
         }
     }
 
-    // Place the word vertically
     if (direction === 'vertical') {
         for (let i = 0; i < wordLength; i++) {
             grid[startX][startY + i] = word[i];
         }
     }
 
-    // Place the word diagonally (down)
     if (direction === 'diagonal') {
         for (let i = 0; i < wordLength; i++) {
             grid[startX + i][startY + i] = word[i];
@@ -148,13 +162,20 @@ function placeWord(grid, word, startX, startY, direction) {
     }
 }
 
+function gridObj(size) {
+    const grid = {};
+    for (let i = 0; i < size; i++) {
+        grid[i] = {};
+        for (let ii = 0; ii < size; ii++) {
+            grid[i][ii] = {};
+        }
+    }
+
+    return grid;
+}
 
 function initializeGrid(size) {
-    const grid = [];
-    for (let i = 0; i < size; i++) {
-        grid.push(Array(size).fill(''));
-    }
-    return grid;
+    return gridObj(size);
 }
 
 function printGrid(gridObject) {
@@ -165,7 +186,7 @@ function printGrid(gridObject) {
     for (let i = 0; i < size; i++) {
         output += "|";
         for (let j = 0; j < size; j++) {
-            output += ` ${grid[i][j].letter} |`; // Access the 'letter' property of each cell object
+            output += ` ${grid[i][j].letter} |`;
         }
         output += "\n";
     }
@@ -173,23 +194,40 @@ function printGrid(gridObject) {
     console.log(output);
 }
 
+function getCurrentDate() {
+    const currentDate = new Date();
+    const day = String(currentDate.getDate()).padStart(2, '0');
+    const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const year = String(currentDate.getFullYear()).slice(-2);
+    const formattedDate = `${day}-${month}-${year}`;
+    return formattedDate;
+}
 
-// Define a route handler for the POST request
 app.post('/api/generate-word-search', (req, res) => {
-    // Retrieve the dictionary of words from the request body
     const words = req.body;
-    console.log("words here:", words)
-    // Generate the 15x15 grid with the given words
     const grid = generateGrid(words);
-    printGrid(grid)
-    // Send the generated grid as a response to the client
+    printGrid(grid); // Uncomment to print grid to console once it has been written
+
+    const currDate = getCurrentDate();
+    const currDateDocRef = db.collection("wordsearchs").doc(currDate);
+
+    let rowCount = 0; // Keep track of which row we are on
+    for (let row in grid.grid) {
+        currDateDocRef.collection("gridData").doc(`row_${rowCount}`).set(grid.grid[rowCount]);
+        rowCount += 1;
+    }
+
+    for (const currWord of Object.values(grid.wordPositions)) {
+        const word = currWord.word;
+        const docRef = currDateDocRef.collection("wordPositions").doc(word);
+        docRef.set(currWord);
+    }
+
     res.status(200).json({ grid });
-
-
 });
 
 // Start the server
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT} `);
 });
