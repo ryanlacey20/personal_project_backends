@@ -1,5 +1,4 @@
-const { initializeApp, applicationDefault, cert } = require('firebase-admin/app');
-
+// ---------------------------- initialise firebase and express --------------------------------------------
 const { getFirestore, Timestamp, FieldValue, Filter, doc } = require('firebase-admin/firestore');
 
 var admin = require("firebase-admin");
@@ -21,25 +20,51 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3001');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-requestType');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     next();
 });
+// ---------------------------- initialise firebase and express --------------------------------------------
 
+//grid object constructor
+// example output:
+// {
+//     "0": { "0": { }, "1": { }, "2": { } },
+//     "1": { "0": { }, "1": { }, "2": { } },
+//     "2": { "0": { }, "1": { }, "2": { } }
+// }
+
+function gridObj(size) {
+    this.grid = {};
+    for (let i = 0; i < size; i++) {
+        this.grid[i] = {};
+        for (let ii = 0; ii < size; ii++) {
+            this.grid[i][ii] = {};
+        }
+    }
+}
+
+
+// only ran when making a 'write' request
 function generateGrid(words) {
+    //create an empty 15*15 2D grid
     const gridSize = 15;
-    const grid = initializeGrid(gridSize);
+    const grid = new gridObj(gridSize);
+
     const directions = ['horizontal', 'vertical', 'diagonal'];
 
     const wordPositions = {};
 
+
     for (let key in words) {
+
         let word = words[key];
 
         let direction = directions[Math.floor(Math.random() * directions.length)];
 
         let placed = false;
         while (!placed) {
+            //pick a random x and y coordinates
             let startX = Math.floor(Math.random() * gridSize);
             let startY = Math.floor(Math.random() * gridSize);
 
@@ -86,6 +111,8 @@ function generateGrid(words) {
 
     return { grid: grid, wordPositions: wordPositions };
 }
+
+
 
 function getRandomLetter() {
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -162,21 +189,7 @@ function placeWord(grid, word, startX, startY, direction) {
     }
 }
 
-function gridObj(size) {
-    const grid = {};
-    for (let i = 0; i < size; i++) {
-        grid[i] = {};
-        for (let ii = 0; ii < size; ii++) {
-            grid[i][ii] = {};
-        }
-    }
 
-    return grid;
-}
-
-function initializeGrid(size) {
-    return gridObj(size);
-}
 
 function printGrid(gridObject) {
     const grid = gridObject.grid;
@@ -203,28 +216,50 @@ function getCurrentDate() {
     return formattedDate;
 }
 
-app.post('/api/generate-word-search', (req, res) => {
-    const words = req.body;
-    const grid = generateGrid(words);
-    printGrid(grid); // Uncomment to print grid to console once it has been written
-
+app.post('/api/generate-word-search', async (req, res) => {
     const currDate = getCurrentDate();
     const currDateDocRef = db.collection("wordsearchs").doc(currDate);
 
-    let rowCount = 0; // Keep track of which row we are on
-    for (let row in grid.grid) {
-        currDateDocRef.collection("gridData").doc(`row_${rowCount}`).set(grid.grid[rowCount]);
-        rowCount += 1;
+    if (req.header('X-requestType') == 'write') {
+        const words = req.body;
+        const grid = generateGrid(words);
+        printGrid(grid);
+
+        let rowCount = 0;
+        for (const row in grid.grid) {
+            await currDateDocRef.collection("gridData").doc(`row_${rowCount}`).set(grid.grid[row]);
+            rowCount += 1;
+        }
+
+        for (const currWord of Object.values(grid.wordPositions)) {
+            const word = currWord.word;
+            const docRef = currDateDocRef.collection("wordPositions").doc(word);
+            await docRef.set(currWord);
+        }
+        res.status(200).json({ grid });
     }
 
-    for (const currWord of Object.values(grid.wordPositions)) {
-        const word = currWord.word;
-        const docRef = currDateDocRef.collection("wordPositions").doc(word);
-        docRef.set(currWord);
-    }
+    if (req.header('X-requestType') == 'read') {
+        const gridDataRef = currDateDocRef.collection('gridData')
+        const wordPositionsRef = currDateDocRef.collection('wordPositions')
+        const gridDataSnapshot = await gridDataRef.get()
+        const wordPositionsSnapshot = await wordPositionsRef.get()
+        const data = {}
+        data.gridData = {}
+        gridDataSnapshot.forEach(doc => {
+            data.gridData[doc.id] = doc.data()
+        })
 
-    res.status(200).json({ grid });
+
+        data.wordPositions = {}
+        wordPositionsSnapshot.forEach(doc => {
+            data.wordPositions[doc.id] = doc.data()
+        })
+
+        res.status(200).json({ data });
+    }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 4000;
